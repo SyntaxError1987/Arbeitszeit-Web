@@ -1,0 +1,426 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Arbeitszeitrechner</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Arbeitszeit">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#eceeea" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#111613" media="(prefers-color-scheme: dark)">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" type="image/png" href="icon-192.png">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&display=swap">
+<style>
+  /* Layout: eine schmale Spalte. Oben die Eingabe, darunter das große Ergebnis, ganz unten die Tagesliste mit Summe. */
+  :root {
+    --bg: #eceeea;
+    --surface: #f8f9f6;
+    --fg: #1a231f;
+    --muted: #596660;
+    --line: #d3d9d1;
+    --accent: #1d6b58;
+    --accent-fg: #ffffff;
+    --warn: #9a5b00;
+    --font-display: "Barlow Condensed", "Arial Narrow", sans-serif;
+    --font-body: "Barlow", system-ui, -apple-system, "Segoe UI", sans-serif;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #111613;
+      --surface: #19211d;
+      --fg: #e5ebe6;
+      --muted: #96a29b;
+      --line: #2a3530;
+      --accent: #5ec2a4;
+      --accent-fg: #0c1511;
+      --warn: #e0a64a;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #111613;
+    --surface: #19211d;
+    --fg: #e5ebe6;
+    --muted: #96a29b;
+    --line: #2a3530;
+    --accent: #5ec2a4;
+    --accent-fg: #0c1511;
+    --warn: #e0a64a;
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--font-body);
+    font-size: 16px;
+    line-height: 1.5;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+    padding-block: calc(32px + env(safe-area-inset-top, 0px)) calc(48px + env(safe-area-inset-bottom, 0px));
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+  }
+  .wrap {
+    max-width: 520px;
+    margin-inline: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+  h1 {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 2rem;
+    letter-spacing: 0.01em;
+    line-height: 1.1;
+    margin: 0;
+    text-wrap: balance;
+  }
+  .sub { margin: 4px 0 0; color: var(--muted); }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 20px;
+  }
+  .fields {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+  }
+  label {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    min-width: 0;
+  }
+  input {
+    font: inherit;
+    font-family: var(--font-display);
+    font-size: 1.6rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    text-transform: none;
+    color: var(--fg);
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 8px 10px;
+    width: 100%;
+    min-width: 0;
+    font-variant-numeric: tabular-nums;
+  }
+  input[type="date"] { font-family: var(--font-body); font-size: 1rem; font-weight: 500; padding: 11px 10px; }
+  /* iPhone Safari: eigene Darstellung abschalten, damit Zeit- und Datumsfelder Größe und Farben der Seite übernehmen */
+  input {
+    -webkit-appearance: none;
+    appearance: none;
+    display: block;
+    min-height: 52px;
+    text-align: left;
+    touch-action: manipulation;
+  }
+  input::-webkit-date-and-time-value { text-align: left; min-height: 1.2em; }
+  input::-webkit-datetime-edit { padding: 0; }
+  input[type="number"]::-webkit-inner-spin-button,
+  input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+  input:focus-visible, button:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  .result { display: flex; flex-direction: column; gap: 4px; }
+  .result-label {
+    font-size: 0.8rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .big {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: clamp(4rem, 22vw, 6rem);
+    line-height: 1;
+    color: var(--accent);
+    font-variant-numeric: tabular-nums;
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .big .unit { font-size: 1.6rem; font-weight: 600; color: var(--muted); }
+  .alt { font-size: 1.1rem; font-variant-numeric: tabular-nums; }
+  .note { color: var(--warn); font-size: 0.95rem; min-height: 1.4em; margin: 4px 0 0; }
+
+  .actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; }
+  button {
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+    border-radius: 4px;
+    padding: 10px 16px;
+    min-height: 44px;
+    touch-action: manipulation;
+    -webkit-appearance: none;
+    appearance: none;
+    border: 1px solid var(--accent);
+    background: var(--accent);
+    color: var(--accent-fg);
+  }
+  button.ghost { background: transparent; color: var(--fg); border-color: var(--line); }
+  button.ghost:hover { border-color: var(--muted); }
+  button.small { padding: 4px 12px; font-size: 0.9rem; min-height: 40px; }
+
+  h2 {
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 1.35rem;
+    letter-spacing: 0.02em;
+    margin: 0 0 12px;
+  }
+  .list-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .list-head h2 { margin: 0; }
+  .tablewrap { overflow-x: auto; margin-top: 12px; }
+  table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  th {
+    text-align: left;
+    font-size: 0.75rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    font-weight: 600;
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--line);
+    white-space: nowrap;
+  }
+  td { padding: 10px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th.num, td.num { text-align: right; }
+  tfoot td { border-bottom: none; font-weight: 600; font-size: 1.1rem; padding-top: 14px; }
+  .empty { color: var(--muted); margin: 12px 0 0; }
+
+  @media (max-width: 420px) {
+    .fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .fields label:first-child { grid-column: 1 / -1; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+
+<main class="wrap">
+  <header>
+    <h1>Arbeitszeitrechner</h1>
+    <p class="sub">Beginn, Ende und Pause eingeben. Die Arbeitszeit steht sofort darunter.</p>
+  </header>
+
+  <section class="card" aria-label="Eingabe">
+    <div class="fields">
+      <label for="start">Beginn
+        <input id="start" type="time" value="08:00">
+      </label>
+      <label for="end">Ende
+        <input id="end" type="time" value="16:00">
+      </label>
+      <label for="pause">Pause (Min.)
+        <input id="pause" type="number" inputmode="numeric" min="0" step="5" value="0">
+      </label>
+    </div>
+  </section>
+
+  <section class="card result" aria-live="polite" aria-label="Ergebnis">
+    <span class="result-label">Gearbeitet</span>
+    <div class="big"><span id="dec">8,00</span><span class="unit">Std.</span></div>
+    <div class="alt" id="hm">8 Std. 0 Min.</div>
+    <p class="note" id="note"></p>
+    <div class="actions">
+      <button type="button" id="add">Zur Liste hinzufügen</button>
+    </div>
+  </section>
+
+  <section class="card" aria-label="Tagesliste">
+    <div class="list-head">
+      <h2>Meine Tage</h2>
+      <button type="button" class="ghost small" id="clear" hidden>Liste leeren</button>
+    </div>
+    <label for="day" style="max-width: 200px;">Datum
+      <input id="day" type="date">
+    </label>
+    <p class="empty" id="empty">Noch kein Tag in der Liste. Mit "Zur Liste hinzufügen" speicherst du den berechneten Tag und siehst unten die Gesamtsumme.</p>
+    <div class="tablewrap" id="tablewrap" hidden>
+      <table>
+        <thead>
+          <tr><th>Tag</th><th>Zeit</th><th class="num">Pause</th><th class="num">Std.</th><th></th></tr>
+        </thead>
+        <tbody id="rows"></tbody>
+        <tfoot>
+          <tr><td colspan="3">Summe</td><td class="num" id="sum">0,00</td><td></td></tr>
+        </tfoot>
+      </table>
+    </div>
+  </section>
+</main>
+
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  var KEY = "arbeitszeitrechner-tage";
+  var entries = [];
+
+  function toMin(t) {
+    if (!t || t.indexOf(":") < 0) return null;
+    var p = t.split(":");
+    return parseInt(p[0], 10) * 60 + parseInt(p[1], 10);
+  }
+  // Rechnet Beginn, Ende und Pause in Minuten um. Ende vor Beginn zählt als Folgetag.
+  function calc(start, end, pause) {
+    var s = toMin(start), e = toMin(end);
+    if (s === null || e === null) return null;
+    var overnight = e < s;
+    var total = e - s + (overnight ? 1440 : 0);
+    var p = Math.max(0, Math.round(pause) || 0);
+    var net = total - p;
+    return { minutes: Math.max(0, net), overnight: overnight, tooMuchPause: net < 0 };
+  }
+  function dec(min) {
+    return (min / 60).toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+  function hm(min) {
+    return Math.floor(min / 60) + " Std. " + (min % 60) + " Min.";
+  }
+
+  function current() {
+    return calc($("start").value, $("end").value, parseFloat($("pause").value));
+  }
+  function render() {
+    var r = current();
+    var note = "";
+    if (!r) {
+      $("dec").textContent = "–";
+      $("hm").textContent = "Bitte Beginn und Ende eingeben.";
+      $("add").disabled = true;
+    } else {
+      $("dec").textContent = dec(r.minutes);
+      $("hm").textContent = hm(r.minutes);
+      $("add").disabled = false;
+      if (r.tooMuchPause) note = "Die Pause ist länger als die Anwesenheit. Bitte Pause prüfen.";
+      else if (r.overnight) note = "Ende liegt vor dem Beginn, gerechnet wird über Mitternacht.";
+    }
+    $("note").textContent = note;
+  }
+
+  function save() {
+    try { localStorage.setItem(KEY, JSON.stringify(entries)); } catch (e) {}
+  }
+  function load() {
+    try {
+      var raw = localStorage.getItem(KEY);
+      if (raw) {
+        var parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) entries = parsed;
+      }
+    } catch (e) {}
+  }
+  function dayLabel(iso) {
+    var d = new Date(iso + "T12:00:00");
+    if (isNaN(d)) return iso;
+    return d.toLocaleDateString("de-DE", { weekday: "short", day: "2-digit", month: "2-digit" });
+  }
+  function renderList() {
+    var has = entries.length > 0;
+    $("empty").hidden = has;
+    $("tablewrap").hidden = !has;
+    $("clear").hidden = !has;
+    var body = $("rows");
+    body.innerHTML = "";
+    var sum = 0;
+    entries.forEach(function (en, i) {
+      sum += en.minutes;
+      var tr = document.createElement("tr");
+      [dayLabel(en.date), en.start + "–" + en.end, en.pause + " Min.", dec(en.minutes)].forEach(function (txt, c) {
+        var td = document.createElement("td");
+        td.textContent = txt;
+        if (c >= 2) td.className = "num";
+        tr.appendChild(td);
+      });
+      var tdBtn = document.createElement("td");
+      tdBtn.className = "num";
+      var b = document.createElement("button");
+      b.type = "button";
+      b.className = "ghost small";
+      b.textContent = "Entfernen";
+      b.setAttribute("aria-label", "Eintrag vom " + dayLabel(en.date) + " entfernen");
+      b.addEventListener("click", function () {
+        entries.splice(i, 1);
+        save();
+        renderList();
+      });
+      tdBtn.appendChild(b);
+      tr.appendChild(tdBtn);
+      body.appendChild(tr);
+    });
+    $("sum").textContent = dec(sum) + " Std.";
+  }
+
+  function todayIso() {
+    var d = new Date();
+    var m = String(d.getMonth() + 1).padStart(2, "0");
+    var day = String(d.getDate()).padStart(2, "0");
+    return d.getFullYear() + "-" + m + "-" + day;
+  }
+
+  ["start", "end", "pause"].forEach(function (id) {
+    $(id).addEventListener("input", render);
+  });
+  $("add").addEventListener("click", function () {
+    var r = current();
+    if (!r) return;
+    entries.push({
+      date: $("day").value || todayIso(),
+      start: $("start").value,
+      end: $("end").value,
+      pause: Math.max(0, Math.round(parseFloat($("pause").value)) || 0),
+      minutes: r.minutes
+    });
+    entries.sort(function (a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; });
+    save();
+    renderList();
+  });
+  $("clear").addEventListener("click", function () {
+    entries = [];
+    save();
+    renderList();
+  });
+
+  $("day").value = todayIso();
+  load();
+  render();
+  renderList();
+})();
+
+// Offline-Betrieb: Der Service Worker legt die Seite beim ersten Öffnen im Speicher des Geräts ab.
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", function () {
+    navigator.serviceWorker.register("sw.js").catch(function () {});
+  });
+}
+</script>
+</body>
+</html>
